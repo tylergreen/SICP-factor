@@ -1,7 +1,6 @@
-USING: kernel vstack hashtables restruct ;
+USING: utils kernel vstack hashtables restruct ;
 
 IN: fmachine
-
 
 TUPLE: machine
     { registers hashtable }
@@ -66,9 +65,6 @@ SINGLETON: unset
 : assemble ( controller-text machine -- )
     [ update-insts! ] curry extract-labels ;
 
-: update-insts! ( insts labels machine -- )
-    ;
-
 : extract-labels ( receive text -- )
     dup empty?
     [ drop '[ { } { }  _ ] call ]
@@ -85,6 +81,34 @@ SINGLETON: unset
         [ swons ] curry
         [ ] swap abi ]
       if ] reduce ;
+
+! test this
+: update-insts! ( insts labels machine -- )
+    '[ [ instr-text _ _ make-execution ] keep
+       set-instruction-proc! ] each  ;
+
+: make-execution-proc ( inst labels machine -- )
+    dup instr>> first
+    { "assign" [ make-assign ]
+      "test" [ make-test ]
+      "branch" [ make-branch ]
+      "goto" [ make-goto ]
+      "save" [ make-save ]
+      "restore" [ make-restore ]
+      "perform" [ make-perform ]
+      [ "Unknown instruction type" throw ]
+    } case ;
+
+: make-assign
+    { ops>> pc>> } cleave .... ;
+
+
+
+      
+      
+
+      
+      
 
   
 { "a" "b" "temp" }
