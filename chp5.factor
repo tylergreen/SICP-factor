@@ -1,76 +1,99 @@
+USING: kernel vstack hashtables restruct ;
+
+IN: fmachine
 
 
-{ a b temp }
-{ { rem rem } { = = } }
-{ test-b
-    [ b 0 = test ]
-    [ gcd-done branch ]
-    [ a b rem temp assign ]
-    [ b a assign ]
-    [ temp b assign ]
-    [ test-b goto ]
-gcd-done } <machine>
+TUPLE: machine
+    { registers hashtable }
+    { stack vector } 
+    ops
+    instr-seq ;
 
-{ a b temp }
-{ { rem rem } { = = } }
-{ test-b
-    [ R{ b } 0 = test ]
-    [ gcd-done branch ]
-    [ R{ a } R{ b } rem temp assign ]
-    [ R{ b } a assign ]
-    [ R{ temp } R{ b } assign ]
-    [ L{ test-b } goto ]
-gcd-done } <machine>
+SINGLETON: unset
+
+! basic machine creation 
+: <bare-machine> ( -- machine )
+    machine new
+    [ H{ } clone >>registers ]
+    [ V{ } clone >>stack ] bi ;
+
+! creates an unset register
+: <register> ( name -- reg ) unset 2array ;
+
+: <operation> ;
+
+! analagous to make-machine + make-new-machine in text
+: <machine> ( register-names ops controller-text  -- machine )
+    [ { "pc" "flag" } append
+      [ <register> ] map >hashtable ]
+    [ [ <operation> ] map >hashtable ]
+    [ assemble ] tri@ ;
+
+! instead of an object, we are going to implement
+! the machine as a quotation that takes messages as
+! arguments
+
+: start ( machine -- )
+    "start" swap call ;
+
+: get-reg-contents ( reg-name machine -- conts )
+    get-register conts>> ;
+
+! check this
+: set-reg-contents! ( reg-name machine -- conts )
+    dup get-register >>contents ;
+
+: get-register ( reg-name machine -- )
+    "get-register" swap call ;
+
+! end object oriented style
 
 
-{ a b temp }
-{ { rem rem } { = = } }
-{ test-b
-    [ R{ b } 0 = test ]
-    [ gcd-done branch ]
-    [ { reg a } { reg b } rem temp assign ]
-    [ { reg b } a assign ]
-    [ R{ temp } R{ b } assign ]
-    [ L{ test-b } goto ]
-gcd-done } <machine>
+: allocate-reg ( machine string -- )
+    unset 2array swap registers>> set-at ;
 
-Machine:
-{ a b temp }
-{ { rem rem } { = = } }
-{ test-b
-    [ [ b reg ]  0 = test ]
-    [ gcd-done branch ]
-    [ [ a reg ] [ b reg ] rem temp assign ]
-    [ [ b reg ] a assign ]
-    [ [ temp reg ]  b assign ]
-    [ [ test-b label ] goto ]
-gcd-done } ;
+: access ( machine reg-name -- value )
+    swap registers>> at ;
 
+! use lazy list
+! need to look more closely at this
+: execute ( machine -- machine )
+    [ "pc" access dup empty? ]
+    [ first execution-proc>> ]
+    [ drop ] do while ;
+
+! probably not right
+: assemble ( controller-text machine -- )
+    [ update-insts! ] curry extract-labels ;
+
+: update-insts! ( insts labels machine -- )
+    ;
+
+: extract-labels ( receive text -- )
+    dup empty?
+    [ drop '[ { } { }  _ ] call ]
+    [ unclip ] ;
+
+! not right but general idea. I'm tired jeez
+: extract-labels ( text )
+    { { } { } }
+    [ dup string?
+      [ make-label-entry
+        [ swons ] curry
+        [ ] abi ]
+      [ make-instr
+        [ swons ] curry
+        [ ] swap abi ]
+      if ] reduce ;
+
+  
 { "a" "b" "temp" }
 { { rem rem } { = = } }
-{ test-b
-    [ [ b reg ]  0 = test ]
-    [ gcd-done branch ]
-    [ [ a reg ] [ b reg ] rem temp assign ]
-    [ [ b reg ] a assign ]
-    [ [ temp reg ]  b assign ]
-    [ [ test-b label ] goto ]
-gcd-done } ;
-
-
-! 
-: <machine> ( register-names ops controller-text  -- machine )
-    [ [ <register> ] map ]
-    [ [ <operation> ] map ]
-    [ assemble ] tri
-    machine new boa ;
-
-TUPLE: machine regs ops instr-seq ;
-        
-        
-        
-    
-    
-    
-
-
+{ "test-b"
+  [ "b" reg 0 = test ]
+  [ "gcd-done" branch ]
+  [ "a" reg "b" reg  "rem" op "temp" assign ]
+  [ "b" reg "a" assign ]
+  [ "temp" reg "b" assign ]
+  [ "test-b" label goto ]
+"gcd-done" } <controller>
