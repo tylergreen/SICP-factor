@@ -7,7 +7,7 @@ SINGLETON: unset
     [let | contents! [ unset ] |
         [ { "get" [ contents ]
             "set" [ contents! ]
-            [ "Unkown request -x- REGISTER " prepend throw ]
+            [ "Unkown request -- REGISTER " prepend throw ]
         } mycase ] ] ;
 
 : make-stack ( -- stack )
@@ -24,7 +24,9 @@ SINGLETON: unset
             } mycase ] ] ;
 
 ! send message
-: sm swap call ;
+! experimenting with these two
+: sm ( quot -- ) swap call ;
+: sm1 ( quot -- ) rot call ;            
 
 : mpop ( stack -- obj ) "pop" sm ;
 
@@ -34,13 +36,15 @@ SINGLETON: unset
 
 : get-contents ( register -- obj ) "get" sm ;
 
-: set-contents! ( obj register -- ) "set" sm ;           
+: set-contents! ( obj register -- ) "set" sm ;
 
-: get-regc ( reg-name machine -- ) "get-register" sm get-contents ;
+: get-reg ( machine reg-name -- ) "get-register" sm1 ;
 
-: set-regc ( obj reg-name machine -- ) "get-register" sm set-contents! ;
+: get-reg-conts ( reg-name machine -- ) get-register get-contents ;
 
-: make-new-machine ( -- machine )
+: set-reg-conts ( obj reg-name machine -- ) "get-register" sm set-contents! ;
+
+: <new-machine> ( -- machine )
             [let* | pc [ make-register ]
                     flag [ make-register ]
                     stack [ make-stack ]
@@ -65,9 +69,63 @@ SINGLETON: unset
                           "stack" [ stack ]
                           "ops" [ ops ]
                           [ Unknown request -- MACHINE" prepend throw ] } mycase ] ] ;
+            ] ] ] ]
 
+                    
 : assemble ( contoller-text machine -- )
-                    ;
+    [ [ string? ] partition swap ] dip update-insts! ;
+
+
+: update-insts! ( insts labels machine -- )
+    '[ [ instr-text _ _ make-exec-proc ] keep set-instr-exec-proc! ] each ;
+
+: make-exec-proc ( labels machine instr  -- quot )
+    dup first
+    { "assign"  [ make-assign ]
+      "test"    [ make-test ]
+      "branch"  [ make-branch ] 
+      "goto"    [ make-goto ]
+      "save"    [ make-save ]
+      "restore" [ make-restore ]
+      "perform" [ make-perform ]
+      [ "Unknown instruction type -- ASSEMBLE " prepend throw ]
+    } mycase ;
+
+: make-assign ( labels machine instr -- quot )
+    over
+    [ assign-value-expr  
+      dup operation-exp?
+      [ make-operation-expr ]
+      [ first make-primitive-expr ] if ] keep
+      assign-reg-name get-register 
+      '[ @ _ set-contents! ]                 ! this might involve "call" instead of @
+    ] dip "pc" get-reg '[ @ _ advance-pc ] ;
+
+: assign-reg-name ( assign-instr -- name ) second ;
+
+: assign-value-expr ( assign-istr -- expr ) 2 tail ;
+
+: make-primitive-expr ( labels machine exp -- quot )
+    {
+    [ constant? ] [  constant-expr-value '[ _ ] 2nip ]        ! double check these accessors
+    [ label-expr? ] [ label-expr-label lookup-labels '[ _ ] nip ] ! "
+    [ register-expr? ] [ register-expr-reg get-register '[ _ get-contents ] nip ]
+    } mycond ;
+
+: make-operation-expr ( labels machine exp -- quot ) ;
+
+
+
+
+
+
+
+               
+             
+           
+
+
+                    
 
 
            
