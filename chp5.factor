@@ -105,6 +105,50 @@ SINGLETON: unset
 
 : assign-value-expr ( assign-istr -- expr ) 2 tail ;
 
+: advance-pc ( pc -- ) get-contents rest set-content! ;
+
+: make-test ( labels machine instr -- quot )
+    over 
+    [ test-condition dup operation-exp?
+      [ make-operation-expr ]
+      [ "Bad TEST instruction -- ASSEMBLE" prepend throw ]
+      if ] dip
+      "flag" "pc" [ get-reg ] bi-curry@ bi
+      '[ @ _ set-contents! _ advance-pc ] ;
+
+: make-test1
+    [ test-condition ]
+    [ operation-exp? ] ! test 
+    [ make-operation-exp ]     ! true 
+    [ "Bad TEST instruction" ] ! false
+    [ something reg ] make-X ;        ! set-register
+
+MACRO: make-X ( accessor test quot1 quot2 register -- quot )
+    '[ over
+      [ @ dup @ 
+        _ _ if
+      ] dip
+      _ "pc" [ get-reg ] bi-curry@ bi
+      '[ @ _ set-contents! _ advance-pc ] ] ;
+
+      
+      
+    
+    
+    
+
+: test-condition ( test-instr -- ) rest ;
+
+: make-branch ( labels machine instr -- quot )
+
+
+  
+      
+      
+      
+    
+
+
 : make-primitive-expr ( labels machine exp -- quot )
     {
     [ constant? ] [  constant-expr-value '[ _ ] 2nip ]        ! double check these accessors
