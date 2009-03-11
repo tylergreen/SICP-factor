@@ -116,6 +116,51 @@ SINGLETON: unset
       "flag" "pc" [ get-reg ] bi-curry@ bi
       '[ @ _ set-contents! _ advance-pc ] ;
 
+
+: make-branch ( labels machine instr -- quot )
+    swap
+    [ branch-dest dup label-expr?
+      [ label-expr-label lookup-label ] 
+      [ "Bad BRANCH instruction -- ASSEMBLE" prepend throw ]
+      if
+    ] dip swap
+    [ "flag" "pc" [ get-reg ] bi-curry@ bi ] dip
+    '[ _ get-contents
+       _ [ _ swap set-contents! ] [ advance-pc ] bi-curry ] ;
+
+: branch-dest ( branch-instr -- ) second ;
+
+: make-goto ( labels machine instr -- quot )
+    goto-dest
+    { [ label-expr? ] [ label-expr-label swapd lookup-label
+                       [ "pc" get-reg ] dip '[ _ _ set-contents! ] ]
+      [ register-expr? ] [ register-expr-reg "pc" [ get-reg ] bi-curry@ bi
+                           '[ _ _ set-contents! ] ]
+      [ "Bad GOTO instr -- ASSEMBLE " prepend throw ]
+    } mycond ;  ! is this the right conditional?
+
+: goto-dest ( goto-instr -- ) second ;
+
+: make-save ( labels machine instr -- )
+    [ drop ] 2dip
+     stack-instr-reg-name "stack" "pc" 3array
+     [ get-reg ] with each                       ! "with" might not be correct
+    '[ _ get-contents _ push _ advance-pc ] ;
+
+: make-restore ( labels machine instr -- )
+    [ drop ] 2dip
+      stack-instr-reg-name "stack" swap "pc" 3array
+      [ get-reg ] with each                      ! "with" might not be correct
+    '[ _ pop _ set-contents! _ advance-pc ] ;
+
+: make-perform ( labels machine instr -- )
+    over
+    [ perform-action dup operation-exp?
+      [ make-operation-exp 1quotation ]
+      [ "Bad Perform instruction -- ASSEMBLE " prepend throw ]
+      if 
+    ] dip "pc" get-reg '[ @ _ advance-pc ] ; ! not sure if exception is in the right place
+  
 : make-test1
     [ test-condition ]
     [ operation-exp? ] ! test 
@@ -131,32 +176,19 @@ MACRO: make-X ( accessor test quot1 quot2 register -- quot )
       _ "pc" [ get-reg ] bi-curry@ bi
       '[ @ _ set-contents! _ advance-pc ] ] ;
 
-      
-      
-    
-    
-    
-
 : test-condition ( test-instr -- ) rest ;
 
 : make-branch ( labels machine instr -- quot )
 
-
-  
-      
-      
-      
-    
-
-
 : make-primitive-expr ( labels machine exp -- quot )
-    {
-    [ constant? ] [  constant-expr-value '[ _ ] 2nip ]        ! double check these accessors
-    [ label-expr? ] [ label-expr-label lookup-labels '[ _ ] nip ] ! "
-    [ register-expr? ] [ register-expr-reg get-register '[ _ get-contents ] nip ]
+    { [ constant? ] [  constant-expr-value '[ _ ] 2nip ]        ! double check these accessors
+      [ label-expr? ] [ label-expr-label lookup-labels '[ _ ] nip ] ! "
+      [ register-expr? ] [ register-expr-reg get-register '[ _ get-contents ] nip ]
     } mycond ;
 
 : make-operation-expr ( labels machine exp -- quot ) ;
+
+
 
 
 
