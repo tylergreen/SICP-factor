@@ -1,7 +1,12 @@
-USING: utils kernel hashtables restruct locals sequences arrays lists assocs ;
-IN: fmachine
+USING: utils kernel hashtables restruct locals fry sequences arrays lists lists.lazy assocs strings ;
+IN: chp5
 
 SINGLETON: unset
+
+: <instr> ( text -- instr ) [ ] 2array ;
+: instr-text ( instr -- text ) first ;                    
+: instr-exec-proc ( inst -- code ) second ;
+: set-instr-exec-proc! ( proc instr -- instr ) instr-text swap 2array ;
 
 : make-register ( -- quot )
     [let | contents! [ unset ] |
@@ -23,6 +28,18 @@ SINGLETON: unset
                   [ "Unknown request -- STACK " throw/m ]
             } mycase ] ] ;
 
+
+: operation-expr-op ( operation-expr -- op )
+        first second ;
+
+: operation-expr-operands ( operation-expr -- operands ) rest ;
+
+: lookup-prim ( symbol operations -- quot )
+        at dup
+        [ second ]
+        [ "Unknown operation -- ASSEMBLE " throw/m ]
+        if ;
+
 ! send message
 ! experimenting with these two
 : sm ( quot -- ) swap call ;
@@ -42,14 +59,21 @@ SINGLETON: unset
 
 : get-reg-conts ( reg-name machine -- obj ) get-reg get-contents ;
 
-: set-reg-conts ( obj reg-name machine -- ) "get-register" sm set-contents! ;
+: set-reg-conts! ( obj reg-name machine -- ) "get-register" sm set-contents! ;
+
+
+: assign-reg-name ( assign-instr -- name ) second ;
+
+: assign-value-expr ( assign-istr -- expr ) 2 tail ;
+
+: advance-pc ( pc -- ) get-contents rest set-contents! ;
 
 : <new-machine> ( -- machine )
             [let* | pc [ make-register ]
                     flag [ make-register ]
                     stack [ make-stack ]
-                    instr-seq [ nil ]
-                    ops [ { { "init-stack" [ stack "init" sm ] } } ]
+                    instr-seq! [ nil ]
+                    ops! [ { { "init-stack" [ stack "init" sm ] } } ]
                     reg-table [ H{ { "pc" pc } { "flag" flag } } ]
                     allocate-reg [ [ dup reg-table at
                                      [ "Multiply defined register: " throw/m ]
@@ -57,59 +81,44 @@ SINGLETON: unset
                     lookup-reg [ [ reg-table at
                                    [ "Unknown register: " throw/m ]
                                    unless* ] ]
-                    exec [ [ get-contents pc dup nil?
-                             [ "done" ]
-                             [ car instr-exec-proc exec [ call ] bi@ ]
-                             if ] ]
-                    | [ { "start" [ instr-seq pc set-content! exec call ]   ! check this
+                    exec [ [ pc [ get-contents ] lazy-map [ instr-exec-proc call ] each "done" ] ]
+                    |  [ { "start" [ instr-seq pc set-contents! exec call ]   ! check this
                           "install-instr-seq" [ instr-seq! ]
                           "allocate-reg" [ allocate-reg call ]
                           "get-register" [ lookup-reg call ]
                           "install-ops" [ ops append ops! ]  ! can we use push?
                           "stack" [ stack ]
                           "ops" [ ops ]
-                          [ Unknown request -- MACHINE" throw/m ] } mycase ] ] ;
+                          [ "Unknown request -- MACHINE" throw/m ] } mycase ] ] ;
 
-: <machine> ( reg-names ops controller-text -- machine )
-        <make-new-machine>
-        [ '[ _ "allocate-reg" sm ] each ]
-        [ "install-ops" sm ]
-        [ assemble ] tri-curry tri 
-        dup "install-instr-seq" sm ; ! dup might not be necessary
+: tagged? ( seq tag -- bool )
+     '[ _ swap first = ] [ array? ] swap bi-curry andq ;
 
-: assemble ( contoller-text machine -- )
-    [ [ string? ] partition swap ] dip update-insts! ;
+: operation-expr? ( expr -- bool )
+     [ sequence? ] [ "op" tagged? ] bi-curry andq ;
 
-: update-insts! ( insts labels machine -- )
-    '[ [ instr-text _ _ make-exec-proc ] keep set-instr-exec-proc! ] each ;
-
-: make-exec-proc ( labels machine instr  -- quot )
-    dup first
-    { "assign"  [ make-assign ]
-      "test"    [ make-test ]
-      "branch"  [ make-branch ] 
-      "goto"    [ make-goto ]
-      "save"    [ make-save ]
-      "restore" [ make-restore ]
-      "perform" [ make-perform ]
-      [ "Unknown instruction type -- ASSEMBLE " throw/m ]
-    } mycase ;
-
+: constant ( expr -- bool ) "const" tagged? ;
+                    
+: make-primitive-expr ( labels machine expr -- quot )
+    { [ constant? ] [ constant-expr-value 1q 2nip ]        ! double check these accessors
+      [ label-expr? ] [ label-expr-label lookup-labels 1q nip ] ! "
+      [ register-expr? ] [ register-expr-reg get-reg '[ _ get-contents ] nip ]
+    } mycond ;
+                    
+: make-operation-expr ( labels machine expr -- quot )
+        [ operation-expr-operands [ '[ _ _ make-primitive-expr ] ] dip swap map ] 2keep
+        [ "ops" sm ] [ operation-expr-op ] bi* lookup-prim
+        [ [ call ] map ] dip call ; ! be sure op is applied to list
+                    
 : make-assign ( labels machine instr -- quot )
     over
     [ assign-value-expr  
-      dup operation-exp?
+      dup operation-expr?
       [ make-operation-expr ]
       [ first make-primitive-expr ] if ] keep
       assign-reg-name get-reg 
       '[ @ _ set-contents! ]                 ! this might involve "call" instead of @
     ] dip "pc" get-reg '[ @ _ advance-pc ] ;
-
-: assign-reg-name ( assign-instr -- name ) second ;
-
-: assign-value-expr ( assign-istr -- expr ) 2 tail ;
-
-: advance-pc ( pc -- ) get-contents rest set-content! ;
 
 : make-test ( labels machine instr -- quot )
     over 
@@ -119,6 +128,7 @@ SINGLETON: unset
       if ] dip
     "flag" "pc" [ get-reg ] bi-curry@ bi
     '[ @ _ set-contents! _ advance-pc ] ;
+                    
 
 : make-branch ( labels machine instr -- quot )
     swap
@@ -159,7 +169,7 @@ SINGLETON: unset
 : make-perform ( labels machine instr -- )
     over
     [ perform-action dup operation-exp?
-      [ make-operation-exp 1q ]
+      [ make-operation-expr 1q ]
       [ "Bad Perform instruction -- ASSEMBLE " throw/m ]
       if 
     ] dip "pc" get-reg '[ @ _ advance-pc ] ; ! not sure if exception is in the right place
@@ -168,8 +178,8 @@ SINGLETON: unset
   
 : make-test1
     [ test-condition ]
-    [ operation-exp? ] ! test 
-    [ make-operation-exp ]     ! true 
+    [ operation-expr? ] ! test 
+    [ make-operation-expr ]     ! true 
     [ "Bad TEST instruction" ] ! false
     [ something reg ] make-X ;        ! set-register
 
@@ -178,44 +188,42 @@ SINGLETON: unset
 
 : make-branch ( labels machine instr -- quot )
 
-: make-primitive-expr ( labels machine exp -- quot )
-    { [ constant? ] [ constant-expr-value 1q 2nip ]        ! double check these accessors
-      [ label-expr? ] [ label-expr-label lookup-labels 1q nip ] ! "
-      [ register-expr? ] [ register-expr-reg get-reg '[ _ get-contents ] nip ]
-    } mycond ;
+                   
+: make-exec-proc ( labels machine instr  -- quot )
+    dup first
+    { "assign"  [ make-assign ]
+      "test"    [ make-test ]
+      "branch"  [ make-branch ] 
+      "goto"    [ make-goto ]
+      "save"    [ make-save ]
+      "restore" [ make-restore ]
+      "perform" [ make-perform ]
+      [ "Unknown instruction type -- ASSEMBLE " throw/m ]
+    } mycase ;
 
-: make-operation-expr ( labels machine exp -- quot )
-        [ operation-expr-operands [ '[ _ _ make-primitive-expr ] ] dip swap map ] 2keep
-        [ "ops" sm ] [ operation-expr-op ] bi* lookup-prim
-        [ [ call ] map ] dip call ; ! be sure op is applied to list
+                    
+! we aren't going to keep the text around for now
+: update-insts! ( insts labels machine -- )
+    '[ [ instr-text _ _ make-exec-proc ] ] each ;
+                    
+: assemble ( contoller-text machine -- )
+    [ [ string? ] partition swap ] dip update-insts! ;
+                    
+: <machine> ( reg-names ops controller-text -- machine )
+        <new-machine>
+        [ '[ _ "allocate-reg" sm ] each ]
+        [ "install-ops" sm ]
+        [ assemble ] tri-curry tri 
+        dup "install-instr-seq" sm ; ! dup might not be necessary
 
-: tagged-seq? ( seq tag -- bool )
-     '[ _ swap first = ] [ array? ] swap bi-curry andq ;
-
-: operation-expr? ( expr -- bool )
-     [ pair? ] [ "op" tagged-seq? ] bi and ;
-
-: operation-expr-op ( operation-expr -- op )
-        first second ;
-
-: operation-expr-operands ( operation-expr -- operands )
-        operation-expr rest ;
-
-: lookup-prim ( symbol operations -- quot )
-        at dup
-        [ second ]
-        [ "Unknown operation -- ASSEMBLE " throw/m ]
-        if ;
-      
-: gcd-machine ( -- )
-
+: gcd-machine ( -- quot )
 { "a" "b" "temp" }
-{ { rem rem } { = = } }
+{ { "rem" [ rem ] } { "=" [ = ] } }
 { "test-b"
-  [ "b" reg 0 = test ]
-  [ "gcd-done" branch ]
-  [ "a" reg "b" reg  "rem" op "temp" assign ]
-  [ "b" reg "a" assign ]
-  [ "temp" reg "b" assign ]
-  [ "test-b" label goto ]
+  { "b" "reg" 0 "=" "test" }
+  { "gcd-done" "branch" }
+  { "a" "reg" "b" "reg"  "rem" "op" "temp" "assign" }
+  { "b" "reg" "a" "assign" }
+  { "temp" "reg" "b" "assign" }
+  { "test-b" "label" "goto" }
 "gcd-done" } <machine> ;
