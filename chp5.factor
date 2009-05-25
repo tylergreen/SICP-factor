@@ -53,11 +53,10 @@ M: assign <exec> ( instr -- quot )
     [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] ;
 
 GENERIC: get-value ( machine obj -- value )
-
-M: op get-value ( machine op -- v ) ; 
+! M: op get-value ( machine op -- v ) ; 
 M: const get-value ( machine const -- v ) nip val>> ;  ! works 
 M: reg get-value ( machine reg -- v ) [ regs>> ] [ rname>> ] bi* swap at ;   ! works
-M: label get-value ( machine label -- v ) ;
+! M: label get-value ( machine label -- v ) ;
 
 M: test <exec> ( test -- quot )
            ;
@@ -78,32 +77,17 @@ M: perform <exec> ( perform -- quot )
           ;
                 
 M: <exeq> assign ( -- quot ) ;
-                
-                
 
-                    
-! we aren't going to keep the text around for now
-: update-insts! ( insts labels machine -- )
-    '[ [ instr-text _ _ make-exec-proc ] ] each ;
-                    
-: assemble ( contoller-text machine -- )
-    [ [ string? ] partition swap ] dip update-insts! ;
-                    
-: <machine> ( reg-names ops controller-text -- machine )
-        <new-machine>
-        [ '[ _ "allocate-reg" sm ] each ]
-        [ "install-ops" sm ]
-        [ assemble ] tri-curry tri 
-        dup "install-instr-seq" sm ; ! dup might not be necessary
-
+! work in progress
+SYMBOLS: a b temp ;
 : gcd-machine ( -- quot )
 { a b temp }
 { { rem [ rem ] } { = [ = ] } }
-{ test-b
-  { b <reg> 0 <const> = <op> "test" }
-  { gcd-done <branch> }
-  { "a" <reg>" "b" <reg>  "rem" "op" "temp" "assign" }
-  { "b" "reg" "a" "assign" }
-  { "temp" "reg" "b" "assign" }
-  { "test-b" "label" "goto" }
-"gcd-done" } <machine> ;
+test-b <label>
+  { b <reg> 0 <const> } = <op> <mtest>
+  gcd-done <branch>
+  { a <reg> b <reg> } rem <op> temp <assign>
+  b <reg> a <assign> 
+  temp <reg> b assign
+  test-b <label> <goto>
+gcd-done <label>  <some-machine> ;
