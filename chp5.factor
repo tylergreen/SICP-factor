@@ -50,11 +50,6 @@ GENERIC: <exec> ( instruction -- quot )
 
 ! all quots produced by the following methods take a machine as argument    
 M: assign <exec> ( instr -- quot )
-    [| m | [ expr>> m swap value
-    ] keep reg-name>> m regs>> set-at ] curry ;  ! '[|  ] is an idea
-
-! i like this one better
-M: assign <exec> ( instr -- quot )
     [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] ;
 
 GENERIC: get-value ( machine obj -- value )
