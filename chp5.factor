@@ -1,4 +1,4 @@
-USING: utils kernel hashtables restruct locals fry sequences arrays lists lists.lazy assocs strings ;
+USING: utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings locals fry ;
 IN: chp5
 
 ! can refine this as necessary
@@ -44,13 +44,16 @@ C: <reg> reg
 TUPLE: label lname ;
 C: <label> label
 
-
 ! maybe should call this asm
 GENERIC: <exec> ( instruction -- quot )
 
-! all quots produced by the following methods take a machine as argument    
+! all quots produced by the following methods take a machine as argument and return a modified machine   
+! M: assign <exec> ( instr -- quot )
+!    [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] ;
+
+! would like to come up with a more elegant solution to advancing the pc
 M: assign <exec> ( instr -- quot )
-    [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] ;
+    [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] advance-pc ;
 
 GENERIC: get-value ( machine obj -- value )
 ! M: op get-value ( machine op -- v ) ; 
@@ -59,6 +62,7 @@ M: reg get-value ( machine reg -- v ) [ regs>> ] [ rname>> ] bi* swap at ;   ! w
 ! M: label get-value ( machine label -- v ) ;
 
 M: test <exec> ( test -- quot )
+    
            ;
 
 M: branch <exec> ( branch -- quot )
@@ -76,7 +80,8 @@ M: restore <exec> ( save -- quot )
 M: perform <exec> ( perform -- quot )
           ;
                 
-M: <exeq> assign ( -- quot ) ;
+: advance-pc ( quot -- quot )
+    [ keep dup regs>> pc at cdr >>regs ] curry ;
 
 ! work in progress
 SYMBOLS: a b temp ;
