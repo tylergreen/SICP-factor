@@ -1,9 +1,22 @@
-USING: utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings locals fry ;
+USING: utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations locals fry ;
 IN: chp5
 
-! can refine this as necessary
-TUPLE: machine stack regs ops ;
-C: <machine> machine
+! !!!!!
+! Data 
+
+TUPLE: op { args array } quot ;
+: <op> ( args quot -- op )
+    [ >quotation { } swap with-datastack ] dip op boa ;
+
+TUPLE: const val ;
+C: <const> const
+
+! should the slot be called reg-name instead?
+TUPLE: reg reg-name ;
+C: <reg> reg
+
+TUPLE: label lname ;
+C: <label> label
 
 ! !!!!!!!!!!!!!
 ! Instructions
@@ -29,20 +42,15 @@ C: <msave> msave
 TUPLE: restore reg-name ;
 C: <restore> restore
 
-! !!!!!
-! Data 
+TUPLE: machine stack regs ops ;
+: <machine> ( reg-names ops ctext -- machine )
+    [ { pc flag } append [ f 2array ] map ]
+    [ 2 nsplit ]
+    [ assemble ] tri* machine boa ;
 
-TUPLE: const val ;
-C: <const> const
-
-TUPLE: op inputs opname ;
-C: <op> op
-
-TUPLE: reg rname ;
-C: <reg> reg
-
-TUPLE: label lname ;
-C: <label> label
+! need to figure out how we're going to do this one, but I think this is correct
+: assemble ( controller-text -- instrs )
+    2 nsplit [ <exec> ] assoc-map ;
 
 ! maybe should call this asm
 GENERIC: <exec> ( instruction -- quot )
@@ -61,15 +69,18 @@ M: const get-value ( machine const -- v ) nip val>> ;  ! works
 M: reg get-value ( machine reg -- v ) [ regs>> ] [ rname>> ] bi* swap at ;   ! works
 ! M: label get-value ( machine label -- v ) ;
 
-M: test <exec> ( test -- quot )
-    
-           ;
+M: mtest <exec> ( test -- quot )
+    expr>> dup op?
+    [ make-operation-expr '[ _ swap >>flag ] ] 
+    [ "Bad Test Instr -- ASSEMBLE" throw ] if
+    ;
 
+! should add error checking
 M: branch <exec> ( branch -- quot )
-           ;
+    label>> ;
           
 M: goto <exec> ( goto -- quot )
-          ;
+    ;
 
 M: save <exec> ( save -- quot )
           ;
@@ -79,20 +90,23 @@ M: restore <exec> ( save -- quot )
 
 M: perform <exec> ( perform -- quot )
           ;
-                
+
+! obviously this will need to be different if pc is stationary and instr-seq moves      
 : advance-pc ( quot -- quot )
     [ keep dup regs>> pc at cdr >>regs ] curry ;
 
-! work in progress
-SYMBOLS: a b temp ;
+: make-operation-exp ( expr -- quot )
+    [ aprocs [ call ] map op ] ; ! something like this
+
+SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
 : gcd-machine ( -- quot )
-{ a b temp }
-{ { rem [ rem ] } { = [ = ] } }
-test-b <label>
-  { b <reg> 0 <const> } = <op> <mtest>
-  gcd-done <branch>
-  { a <reg> b <reg> } rem <op> temp <assign>
-  b <reg> a <assign> 
-  temp <reg> b assign
-  test-b <label> <goto>
-gcd-done <label>  <some-machine> ;
+    { a b temp }
+    { rem [ rem ] = [ = ] }
+    { test-b  [ { b <reg> 0 <const> } [ = ] <op> <mtest>
+                gcd-done <branch>
+                { a <reg> b <reg> } [ rem ] <op> temp <assign>
+                b <reg> a <assign>
+                temp <reg> b <assign>
+                test-b <label> <goto> ]
+      gcd-done [ ]
+    } <machine> ;
