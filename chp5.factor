@@ -99,7 +99,7 @@ M: perform <exec> ( perform -- quot )
     [ aprocs [ call ] map op ] ; ! something like this
 
 SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
-: gcd-machine ( -- quot )
+: gcd-machine ( -- machine )
     { a b temp }
     { rem [ rem ] = [ = ] }
     { test-b  [ { b <reg> 0 <const> } [ = ] <op> <mtest>
