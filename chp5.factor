@@ -1,5 +1,5 @@
-USING: accessors math utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
-IN: chp5
+USING: accessors prettyprint math utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
+IN: sicp.chp5
 
 SYMBOLS: flag pc ;
 
@@ -13,7 +13,6 @@ TUPLE: op { args array } prim ;
 TUPLE: const val ;
 C: <const> const
 
-! should the slot be called reg-name instead?
 TUPLE: reg reg-name ;
 C: <reg> reg
 
@@ -46,10 +45,12 @@ C: <restore> restore
 
 ! !!!!! Machine
 
+TUPLE: machine regs stack instr-seq ;
+
 TUPLE: register conts ;
 : <register> ( -- register ) register new ;
 
-: set-contents! ( register x -- ) swap >>conts drop ;
+: set-contents! ( register x -- ) >>conts drop ;
 
 TUPLE: stack s ;
 : <stack> ( -- stack ) nil stack boa  ;
@@ -68,9 +69,9 @@ M: const <op-expr> ( labels machine instr -- quot )
     val>> '[ _ ] 2nip ;
 
 M: label <op-expr> ( labels machine instr -- quot )
-    nip lname>> swap at '[ _ ] ;
+    nip lname>> swap at ;
 
-M: register <op-expr> ( labels machine instr -- quot )
+M: reg <op-expr> ( labels machine instr -- quot )
     [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
 
 ! don't like the second line but can't come up with anything better yet
@@ -117,7 +118,7 @@ M: register <goto-exec> ( labels machine register -- quot )
            r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
         [ pc r conts>> set-contents! ] ] ;
 
-M: goto <exec> ( labels machine goto -- quot ) <goto-exec> ;
+M: goto <exec> ( labels machine goto -- quot ) location>> <goto-exec> ;
 
 M: msave <exec> ( labels machine save -- quot )
     [let | pc [ over regs>> pc swap at ]
@@ -139,23 +140,25 @@ M: perform <exec> ( labels machine perform -- quot )
         [ action-proc call
           pc advance ] ] ;
 
+TUPLE: instruction text quot ;
+: <instr> ( instr-text -- instr ) instruction new swap >>text ;
+
 ! read page 520 to review how to fix this final problem      
-: update-insts! ( machine labels insts -- )
-    ;
+:: update-insts! ( machine labels insts -- insts )
+    insts [ dup text>> labels machine rot <exec> >>quot ] map ;
 
-! this is more complicated than you thought
-! need to assemble from the end to the beginning so 
-: assemble ( machine controller-text -- instrs )
-    2 nsplit dup values update-insts! ;
-
-! huge problem here
-TUPLE: machine regs stack instr-seq ;
+: assemble ( machine controller-text -- insts )
+    2 nsplit [ { } swap with-datastack [ <instr> ] map
+    ] assoc-map dup values concat update-insts! ;
 
 : <machine> ( reg-names ctext -- machine )
     [ { pc flag } append [ <register> 2array ] map
-      <stack> f machine boa
-    ] keep
-    [ assemble ] keep swap >>instr-seq ;
+      <stack> f machine boa dup
+    ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
+
+
+
+
       
 SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
 : gcd-machine ( -- machine )
@@ -168,3 +171,13 @@ SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this 
                 test-b <label> <goto> ]
       gcd-done [ ]
     }  <machine> ;
+
+:: set-reg ( machine reg-name value -- machine )
+    reg-name machine regs>> at value set-contents! machine ;
+
+: get-reg ( machine reg-name -- value ) swap regs>> at ;
+
+: exec ( machine -- machine )
+    dup regs>> pc swap at conts>> dup empty?
+    [ drop "done" . ]
+    [ first quot>> call exec ] if ; inline
