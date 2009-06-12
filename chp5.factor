@@ -1,10 +1,12 @@
-USING: utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations locals fry ;
+USING: accessors math utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
 IN: chp5
+
+SYMBOLS: flag pc ;
 
 ! !!!!!
 ! Data 
 
-TUPLE: op { args array } quot ;
+TUPLE: op { args array } prim ;
 : <op> ( args quot -- op )
     [ >quotation { } swap with-datastack ] dip op boa ;
 
@@ -27,7 +29,7 @@ C: <assign> assign
 TUPLE: perform inputs op ;
 C: <perform> perform
 
-TUPLE: mtest expr ;
+TUPLE: mtest pred ;
 C: <mtest> mtest
                 
 TUPLE: branch label ;
@@ -42,66 +44,122 @@ C: <msave> msave
 TUPLE: restore reg-name ;
 C: <restore> restore
 
-TUPLE: machine stack regs ops ;
-: <machine> ( reg-names ops ctext -- machine )
-    [ { pc flag } append [ f 2array ] map ]
-    [ 2 nsplit ]
-    [ assemble ] tri* machine boa ;
+! !!!!! Machine
 
-! need to figure out how we're going to do this one, but I think this is correct
-: assemble ( controller-text -- instrs )
-    2 nsplit [ <exec> ] assoc-map ;
+TUPLE: register conts ;
+: <register> ( -- register ) register new ;
+
+: set-contents! ( register x -- ) swap >>conts drop ;
+
+TUPLE: stack s ;
+: <stack> ( -- stack ) nil stack boa  ;
+
+: spush ( elem stack -- ) [ s>> cons ] keep swap >>s drop ;
+: spop ( stack -- elem ) [ s>> uncons ] keep swap >>s drop ;
+
+: advance ( pc -- )
+    dup conts>> rest-slice set-contents! ;
 
 ! maybe should call this asm
-GENERIC: <exec> ( instruction -- quot )
+GENERIC: <exec> ( labels machine intr -- quot )
+GENERIC: <op-expr> ( labels machine instr -- quot )
+
+M: const <op-expr> ( labels machine instr -- quot )
+    val>> '[ _ ] 2nip ;
+
+M: label <op-expr> ( labels machine instr -- quot )
+    nip lname>> swap at '[ _ ] ;
+
+M: register <op-expr> ( labels machine instr -- quot )
+    [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
+
+! don't like the second line but can't come up with anything better yet
+! not sure if not distinguishing between primitives and ops screws up our language
+M: op <op-expr> ( labels machine instr -- quot )
+    [let | op [ dup prim>> ] 
+           aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
+        [ aprocs [ call ] each op call ] ] ;
 
 ! all quots produced by the following methods take a machine as argument and return a modified machine   
 ! M: assign <exec> ( instr -- quot )
 !    [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] ;
 
 ! would like to come up with a more elegant solution to advancing the pc
-M: assign <exec> ( instr -- quot )
-    [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] advance-pc ;
+M: assign <exec> ( labels machine instr -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           target [ 2dup [ regs>> ] [ reg-name>> ] bi* swap at ]
+           value-proc [ expr>> <op-expr> ] |
+        [ target value-proc call set-contents! pc advance ] ] ;
 
-GENERIC: get-value ( machine obj -- value )
-! M: op get-value ( machine op -- v ) ; 
-M: const get-value ( machine const -- v ) nip val>> ;  ! works 
-M: reg get-value ( machine reg -- v ) [ regs>> ] [ rname>> ] bi* swap at ;   ! works
-! M: label get-value ( machine label -- v ) ;
+M: mtest <exec> ( labels machine test -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           flag [ over regs>> flag swap at ]
+           condition-proc [ pred>> <op-expr> ] |
+        [ flag condition-proc call set-contents! pc advance ] ] ;
 
-M: mtest <exec> ( test -- quot )
-    expr>> dup op?
-    [ make-operation-expr '[ _ swap >>flag ] ] 
-    [ "Bad Test Instr -- ASSEMBLE" throw ] if
+M: branch <exec> ( labels machine branch -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           flag [ over regs>> flag swap at ]
+           insts [ nip label>> swap at ] |
+        [ flag conts>>
+          [ pc insts set-contents! ]
+          [ pc advance ] if ] ] ;
+
+GENERIC: <goto-exec> ( labels machine data -- quot )      
+      
+M: label <goto-exec> ( labels machine label -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           insts [ nip lname>> swap at ] |
+        [ pc insts set-contents! ] ] ;
+
+M: register <goto-exec> ( labels machine register -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
+        [ pc r conts>> set-contents! ] ] ;
+
+M: goto <exec> ( labels machine goto -- quot ) <goto-exec> ;
+
+M: msave <exec> ( labels machine save -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           stack [ over stack>> ]
+           r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
+        [ r conts>> stack spush
+          pc advance ] ] ;
+
+M: restore <exec> ( labels machine save -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           stack [ over stack>> ]
+           r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
+        [ reg stack spop set-contents! 
+          pc advance ] ] ;
+
+M: perform <exec> ( labels machine perform -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           action-proc [ <op-expr> ] |
+        [ action-proc call
+          pc advance ] ] ;
+
+! read page 520 to review how to fix this final problem      
+: update-insts! ( machine labels insts -- )
     ;
 
-! should add error checking
-M: branch <exec> ( branch -- quot )
-    label>> ;
-          
-M: goto <exec> ( goto -- quot )
-    ;
+! this is more complicated than you thought
+! need to assemble from the end to the beginning so 
+: assemble ( machine controller-text -- instrs )
+    2 nsplit dup values update-insts! ;
 
-M: save <exec> ( save -- quot )
-          ;
+! huge problem here
+TUPLE: machine regs stack instr-seq ;
 
-M: restore <exec> ( save -- quot )
-          ;
-
-M: perform <exec> ( perform -- quot )
-          ;
-
-! obviously this will need to be different if pc is stationary and instr-seq moves      
-: advance-pc ( quot -- quot )
-    [ keep dup regs>> pc at cdr >>regs ] curry ;
-
-: make-operation-exp ( expr -- quot )
-    [ aprocs [ call ] map op ] ; ! something like this
-
+: <machine> ( reg-names ctext -- machine )
+    [ { pc flag } append [ <register> 2array ] map
+      <stack> f machine boa
+    ] keep
+    [ assemble ] keep swap >>instr-seq ;
+      
 SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
 : gcd-machine ( -- machine )
     { a b temp }
-    { rem [ rem ] = [ = ] }
     { test-b  [ { b <reg> 0 <const> } [ = ] <op> <mtest>
                 gcd-done <branch>
                 { a <reg> b <reg> } [ rem ] <op> temp <assign>
@@ -109,4 +167,4 @@ SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this 
                 temp <reg> b <assign>
                 test-b <label> <goto> ]
       gcd-done [ ]
-    } <machine> ;
+    }  <machine> ;
