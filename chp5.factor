@@ -61,7 +61,6 @@ TUPLE: stack s ;
 : advance ( pc -- )
     dup conts>> rest-slice set-contents! ;
 
-! maybe should call this asm
 GENERIC: <exec> ( labels machine intr -- quot )
 GENERIC: <op-expr> ( labels machine instr -- quot )
 
@@ -81,11 +80,6 @@ M: op <op-expr> ( labels machine instr -- quot )
            aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
         [ aprocs [ call ] each op call ] ] ;
 
-! all quots produced by the following methods take a machine as argument and return a modified machine   
-! M: assign <exec> ( instr -- quot )
-!    [ <assign> ] undo '[ [ _ value ] [ regs>> ] bi _ swap set-at ] ;
-
-! would like to come up with a more elegant solution to advancing the pc
 M: assign <exec> ( labels machine instr -- quot )
     [let | pc [ over regs>> pc swap at ]
            target [ 2dup [ regs>> ] [ reg-name>> ] bi* swap at ]
@@ -143,7 +137,6 @@ M: perform <exec> ( labels machine perform -- quot )
 TUPLE: instruction text quot ;
 : <instr> ( instr-text -- instr ) instruction new swap >>text ;
 
-! read page 520 to review how to fix this final problem      
 :: update-insts! ( machine labels insts -- insts )
     insts [ dup text>> labels machine rot <exec> >>quot ] map ;
 
@@ -196,12 +189,3 @@ SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
       base-case [ 1 <const> val <assign>
                   cont <reg> <goto> ]
       fact-done [ ] } <machine> ;
-                  
-                   
-                  
-                    
-    
-    
-
-
-
