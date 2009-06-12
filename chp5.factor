@@ -1,9 +1,9 @@
-USING: accessors prettyprint math utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
+USING: accessors prettyprint math math.order utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
 IN: sicp.chp5
 
 SYMBOLS: flag pc ;
 
-! !!!!!
+! *****
 ! Data 
 
 TUPLE: op { args array } prim ;
@@ -19,8 +19,8 @@ C: <reg> reg
 TUPLE: label lname ;
 C: <label> label
 
-! !!!!!!!!!!!!!
-! Instructions
+! ******************
+! Instruction Syntax
 
 TUPLE: assign expr reg-name ;
 C: <assign> assign
@@ -43,7 +43,8 @@ C: <msave> msave
 TUPLE: restore reg-name ;
 C: <restore> restore
 
-! !!!!! Machine
+! **********
+!  Machine
 
 TUPLE: machine regs stack instr-seq ;
 
@@ -52,14 +53,27 @@ TUPLE: register conts ;
 
 : set-contents! ( register x -- ) >>conts drop ;
 
-TUPLE: stack s ;
-: <stack> ( -- stack ) nil stack boa  ;
+TUPLE: stack s push-count max-depth current-depth ;
+: <stack> ( -- stack ) nil 0 0 0 stack boa ;
 
-: spush ( elem stack -- ) [ s>> cons ] keep swap >>s drop ;
-: spop ( stack -- elem ) [ s>> uncons ] keep swap >>s drop ;
+: spush ( elem stack -- )
+    [ s>> cons ] keep swap >>s
+    dup push-count>> 1+ >>push-count
+    dup current-depth>> 1+ >>current-depth
+    dup [ max-depth>> ] [ current-depth>> ] bi max >>max-depth drop ;
+ 
+: spop1 ( stack -- elem )
+    [ s>> uncons ] keep swap >>s drop ;
+
+: spop ( stack -- elem )
+    dup nil?
+    [ "Empty Stack -- SPOP" throw ]
+    [ dup current-depth>> 1 - >>current-depth 
+      [ s>> uncons ] keep swap >>s drop
+    ] if ; 
 
 : advance ( pc -- )
-    dup conts>> rest-slice set-contents! ;
+    dup conts>> rest-slice >>conts drop ;
 
 GENERIC: <exec> ( labels machine intr -- quot )
 GENERIC: <op-expr> ( labels machine instr -- quot )
@@ -73,8 +87,6 @@ M: label <op-expr> ( labels machine instr -- quot )
 M: reg <op-expr> ( labels machine instr -- quot )
     [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
 
-! don't like the second line but can't come up with anything better yet
-! not sure if not distinguishing between primitives and ops screws up our language
 M: op <op-expr> ( labels machine instr -- quot )
     [let | op [ dup prim>> ] 
            aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
