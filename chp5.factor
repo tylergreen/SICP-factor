@@ -69,7 +69,7 @@ M: const <op-expr> ( labels machine instr -- quot )
     val>> '[ _ ] 2nip ;
 
 M: label <op-expr> ( labels machine instr -- quot )
-    nip lname>> swap at ;
+    nip lname>> swap at 1q ;
 
 M: reg <op-expr> ( labels machine instr -- quot )
     [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
@@ -113,7 +113,7 @@ M: label <goto-exec> ( labels machine label -- quot )
            insts [ nip lname>> swap at ] |
         [ pc insts set-contents! ] ] ;
 
-M: register <goto-exec> ( labels machine register -- quot )
+M: reg <goto-exec> ( labels machine register -- quot )
     [let | pc [ over regs>> pc swap at ]
            r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
         [ pc r conts>> set-contents! ] ] ;
@@ -131,7 +131,7 @@ M: restore <exec> ( labels machine save -- quot )
     [let | pc [ over regs>> pc swap at ]
            stack [ over stack>> ]
            r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
-        [ reg stack spop set-contents! 
+        [ r stack spop set-contents! 
           pc advance ] ] ;
 
 M: perform <exec> ( labels machine perform -- quot )
@@ -156,9 +156,15 @@ TUPLE: instruction text quot ;
       <stack> f machine boa dup
     ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
 
+: exec ( machine -- machine )
+    dup regs>> pc swap at conts>> dup empty?
+    [ drop "done" . ]
+    [ first quot>> call exec ] if ; inline
 
+:: set-reg ( machine reg-name value -- machine )
+    reg-name machine regs>> at value set-contents! machine ;
 
-
+: get-reg ( machine reg-name -- value ) swap regs>> at ;
       
 SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
 : gcd-machine ( -- machine )
@@ -170,14 +176,32 @@ SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this 
                 temp <reg> b <assign>
                 test-b <label> <goto> ]
       gcd-done [ ]
-    }  <machine> ;
+    } <machine> ;
 
-:: set-reg ( machine reg-name value -- machine )
-    reg-name machine regs>> at value set-contents! machine ;
+SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
+: fact-machine ( -- machine )
+    { n val cont }
+    { start [ fact-done <label> cont <assign> ]
+      fact-loop [ { n <reg> 0 <const> } [ = ] <op> <mtest>
+                  base-case <branch>
+                  cont <msave>
+                  n <msave>
+                  { n <reg> 1 <const> } [ - ] <op> n <assign>
+                  after-fact <label> cont <assign>
+                  fact-loop <label> <goto> ]
+      after-fact [ n <restore>
+                   cont <restore>
+                   { n <reg> val <reg> } [ * ] <op> val <assign>
+                   cont <reg> <goto> ]
+      base-case [ 1 <const> val <assign>
+                  cont <reg> <goto> ]
+      fact-done [ ] } <machine> ;
+                  
+                   
+                  
+                    
+    
+    
 
-: get-reg ( machine reg-name -- value ) swap regs>> at ;
 
-: exec ( machine -- machine )
-    dup regs>> pc swap at conts>> dup empty?
-    [ drop "done" . ]
-    [ first quot>> call exec ] if ; inline
+
