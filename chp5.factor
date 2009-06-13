@@ -236,16 +236,49 @@ SYMBOLS: fib-loop afterfib-n-1 afterfib-n-2  immediate-answer fib-done ;
                          cont <reg> <goto> ]
       fib-done [ ] } <machine> ;
 
-  
-SYMBOLS: tree count-done count-leaves base-zero base-one ;
+
+! ex. 5.21 (a)
+SYMBOLS: tree count-done count-loop count-left count-right base-zero base-one ;
 : leaf-counter ( -- machine )
-    [ { tree temp cont }
+    { tree val cont temp }
     { start [ count-done <label> cont <assign> ]
-      count-leaves [ { tree <reg> } [ nil? ] <op> <mtest>
-                     base-zero <branch>
-                     { tree <reg> } [ cons? ] <op> temp <assign>
-                     { temp <reg> } [ not ] <op> <mtest>
-                     base-one <branch>
-      ]
-    } <machine> ] ;
+      count-loop [ { tree <reg> } [ nil? ] <op> <mtest>
+                   base-zero <branch>
+                   { tree <reg> } [ cons? ] <op> temp <assign>
+                   { temp <reg> } [ not ] <op> <mtest>
+                   base-one <branch>
+                   cont <msave>
+                   count-left <label> cont <assign>
+                   tree <msave>
+                   { tree <reg> } [ car ] <op> tree <assign>
+                   count-loop <label> <goto> ]
+      count-left [ tree <restore>
+                   cont <restore>
+                   { tree <reg> } [ cdr ] <op> tree <assign>
+                   cont <msave>
+                   count-right <label> cont <assign>
+                   val <msave>
+                   count-loop <label> <goto> ]
+      count-right [ val <reg> temp <assign>
+                    val <restore>
+                    cont <restore>
+                    { val <reg> temp <reg> } [ + ] <op> val <assign>
+                    cont <reg> <goto> ]
+      base-zero [ 0 <const> val <assign>
+                  cont <reg> <goto> ]
+      base-one [ 1 <const> val <assign>
+                  cont <reg> <goto> ]
+      count-done [ ] } <machine> ;
+
+! ex. 5.21 (b)
+
+: count-leaves2 ( -- machine )
+    { tree n temp }
+    { count-loop [ { tree <reg> } [ nil? ] <op> <mtest>
+                   count-done <branch>
+                   { tree <reg> } [ cons? ] <op> temp <assign>
+                   { temp <reg> } [ not ] <op> <mtest>
+                   found-leaf <branch>
+                   ! not done
+    ] } <machine> ;
 
