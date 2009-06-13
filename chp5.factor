@@ -1,7 +1,7 @@
 USING: accessors prettyprint math math.order utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
 IN: sicp.chp5
 
-SYMBOLS: flag pc ;
+SYMBOLS: flag pc cars cdrs free ;
 
 ! *****
 ! Data 
@@ -33,7 +33,7 @@ C: <mtest> mtest
                 
 TUPLE: branch label ;
 C: <branch> branch
-                
+
 TUPLE: goto location ;
 C: <goto> goto
                 
@@ -79,7 +79,7 @@ GENERIC: <exec> ( labels machine intr -- quot )
 GENERIC: <op-expr> ( labels machine instr -- quot )
 
 M: const <op-expr> ( labels machine instr -- quot )
-    val>> '[ _ ] 2nip ;
+    val>> 1q 2nip ;
 
 M: label <op-expr> ( labels machine instr -- quot )
     nip lname>> swap at 1q ;
@@ -157,6 +157,11 @@ TUPLE: instruction text quot ;
     ] assoc-map dup values concat update-insts! ;
 
 : <machine> ( reg-names ctext -- machine )
+    [ { pc flag } append [ <register> 2array ] map
+      <stack> f machine boa dup
+    ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
+
+: <machine2> ( reg-names ctext -- machine )
     [ { pc flag cars cdrs free } append [ <register> 2array ] map
       <stack> f machine boa dup
     ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
@@ -183,6 +188,7 @@ SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this 
       gcd-done [ ]
     } <machine> ;
 
+                     
 SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
 : fact-machine ( -- machine )
     { n val cont }
@@ -201,3 +207,45 @@ SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
       base-case [ 1 <const> val <assign>
                   cont <reg> <goto> ]
       fact-done [ ] } <machine> ;
+
+
+SYMBOLS: fib-loop afterfib-n-1 afterfib-n-2  immediate-answer fib-done ;
+: fib-machine ( -- machine )
+    { n val cont }
+    { start [ fib-done <label> cont <assign> ]
+      fib-loop [ { n <reg> 2 <const> } [ < ] <op> <mtest>
+                 immediate-answer <branch>
+                 cont <msave>
+                 afterfib-n-1 <label> cont <assign>
+                 n <msave>
+                 { n <reg> 1 <const> } [ - ] <op> n <assign>
+                 fib-loop <label> <goto> ]
+      afterfib-n-1 [ n <restore>
+                     cont <restore>
+                     { n <reg> 2 <const> } [ - ] <op> n <assign>
+                     cont <msave>
+                     afterfib-n-2 <label> cont <assign>
+                     val <msave>
+                     fib-loop <label> <goto> ]
+      afterfib-n-2 [ val <reg> n <assign>
+                     val <restore>
+                     cont <restore>
+                     { val <reg> n <reg> } [ + ] <op> val <assign>
+                     cont <reg> <goto> ]
+      immediate-answer [ n <reg> val <assign>
+                         cont <reg> <goto> ]
+      fib-done [ ] } <machine> ;
+
+  
+SYMBOLS: tree count-done count-leaves base-zero base-one ;
+: leaf-counter ( -- machine )
+    [ { tree temp cont }
+    { start [ count-done <label> cont <assign> ]
+      count-leaves [ { tree <reg> } [ nil? ] <op> <mtest>
+                     base-zero <branch>
+                     { tree <reg> } [ cons? ] <op> temp <assign>
+                     { temp <reg> } [ not ] <op> <mtest>
+                     base-one <branch>
+      ]
+    } <machine> ] ;
+
