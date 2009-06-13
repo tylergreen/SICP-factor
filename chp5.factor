@@ -157,7 +157,7 @@ TUPLE: instruction text quot ;
     ] assoc-map dup values concat update-insts! ;
 
 : <machine> ( reg-names ctext -- machine )
-    [ { pc flag } append [ <register> 2array ] map
+    [ { pc flag cars cdrs free } append [ <register> 2array ] map
       <stack> f machine boa dup
     ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
 
