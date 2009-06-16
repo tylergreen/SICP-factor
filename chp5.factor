@@ -1,7 +1,9 @@
-USING: accessors prettyprint math math.order utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
+USING: accessors namespaces prettyprint math math.order utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
 IN: sicp.chp5
 
-SYMBOLS: flag pc cars cdrs free ;
+SYMBOLS: flag pc the-cars the-cdrs free ;
+
+CONSTANT: heap-size 500
 
 ! *****
 ! Data 
@@ -25,7 +27,7 @@ C: <label> label
 TUPLE: assign expr reg-name ;
 C: <assign> assign
                 
-TUPLE: perform inputs op ;
+TUPLE: perform expr ;
 C: <perform> perform
 
 TUPLE: mtest pred ;
@@ -42,6 +44,31 @@ C: <msave> msave
                 
 TUPLE: restore reg-name ;
 C: <restore> restore
+
+! *************************
+! Memory Management "Macros"
+
+: pcar ( reg -- expr )
+    { the-cars <reg> } append [ nth ] <op> ;
+
+: pcdr ( reg -- expr )
+    { the-cdrs <reg> } append [ nth ] <op> ;
+
+! make sure ordering is correct for these
+: set-car! ( reg reg -- expr )
+    the-cars <reg> 3array [ set-nth ] <op> ;
+
+: set-cdr  ( reg reg -- expr )
+    the-cdrs <reg> 3array [ set-nth ] <op> ;
+
+! need to revise this one -- its wrong!
+! swons like in order or args!
+:: pcons ( reg3 reg2 -- expr1 expr2 expr3 expr4 )
+    { reg2 <reg> free <reg> the-cars <reg> } [ set-nth ] <op> <perform>
+    { reg3 <reg> free <reg> the-cdrs <reg> } [ set-nth ] <op> <perform>
+    { free <reg> } reg1 <assign>
+    { free <reg> } [ 1+ ] <op> free <assign> ;
+
 
 ! **********
 !  Machine
@@ -98,6 +125,12 @@ M: assign <exec> ( labels machine instr -- quot )
            value-proc [ expr>> <op-expr> ] |
         [ target value-proc call set-contents! pc advance ] ] ;
 
+M: perform <exec> ( labels machine perform -- quot )
+    [let | pc [ over regs>> pc swap at ]
+           action-proc [ expr>> <op-expr> ] |
+        [ action-proc call
+          pc advance ] ] ;
+
 M: mtest <exec> ( labels machine test -- quot )
     [let | pc [ over regs>> pc swap at ]
            flag [ over regs>> flag swap at ]
@@ -140,12 +173,6 @@ M: restore <exec> ( labels machine save -- quot )
         [ r stack spop set-contents! 
           pc advance ] ] ;
 
-M: perform <exec> ( labels machine perform -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           action-proc [ <op-expr> ] |
-        [ action-proc call
-          pc advance ] ] ;
-
 TUPLE: instruction text quot ;
 : <instr> ( instr-text -- instr ) instruction new swap >>text ;
 
@@ -162,9 +189,14 @@ TUPLE: instruction text quot ;
     ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
 
 : <machine2> ( reg-names ctext -- machine )
-    [ { pc flag cars cdrs free } append [ <register> 2array ] map
+    [ { pc flag the-cars the-cdrs free } append [ <register> 2array ] map
       <stack> f machine boa dup
-    ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
+    ] dip assemble
+    >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents!
+    [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep
+    [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep ;
+  
+    
 
 : exec ( machine -- machine )
     dup regs>> pc swap at conts>> dup empty?
@@ -175,6 +207,7 @@ TUPLE: instruction text quot ;
     reg-name machine regs>> at value set-contents! machine ;
 
 : get-reg ( machine reg-name -- value ) swap regs>> at ;
+
       
 SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
 : gcd-machine ( -- machine )
@@ -272,6 +305,7 @@ SYMBOLS: tree count-done count-loop count-left count-right base-zero base-one ;
 
 ! ex. 5.21 (b)
 
+SYMBOLS: found-leaf ;
 : count-leaves2 ( -- machine )
     { tree n temp }
     { count-loop [ { tree <reg> } [ nil? ] <op> <mtest>
