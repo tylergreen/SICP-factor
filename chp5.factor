@@ -6,7 +6,7 @@ SYMBOLS: flag pc the-cars the-cdrs free ;
 CONSTANT: heap-size 500
 
 ! *****
-! Data 
+! Data
 
 TUPLE: op { args array } prim ;
 : <op> ( args quot -- op )
@@ -196,8 +196,6 @@ TUPLE: instruction text quot ;
     [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep
     [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep ;
   
-    
-
 : exec ( machine -- machine )
     dup regs>> pc swap at conts>> dup empty?
     [ drop "done" . ]
@@ -315,4 +313,8 @@ SYMBOLS: found-leaf ;
                    found-leaf <branch>
                    ! not done
     ] } <machine> ;
+
+
+
+
 
