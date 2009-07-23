@@ -24,6 +24,9 @@ C: <label> label
 ! ******************
 ! Primitive Instruction Syntax
 
+TUPLE: instruction text quot ;
+: <instr> ( instr-text -- instr ) instruction new swap >>text ;
+
 TUPLE: assign expr reg-name ;
 C: <assign> assign
                 
@@ -76,6 +79,9 @@ TUPLE: register conts ;
 TUPLE: stack s push-count max-depth depth ;
 : <stack> ( -- stack ) nil 0 0 0 stack boa ;
 
+! **********
+! Machine actions
+
 : spush ( elem stack -- )
     [ s>> cons ] keep swap >>s
     [ 1+ ] change-push-count 
@@ -92,7 +98,10 @@ TUPLE: stack s push-count max-depth depth ;
 : advance ( pc -- )
     [ rest-slice ] change-conts ;
 
-GENERIC: <exec> ( labels machine intr -- quot )
+! *********
+! Assembler ( machine-language -> factor )
+
+GENERIC: <exec> ( labels machine instr -- quot )
 GENERIC: <op-expr> ( labels machine instr -- quot )
 
 M: const <op-expr> ( labels machine instr -- quot )
@@ -161,9 +170,6 @@ M: restore <exec> ( labels machine save -- quot )
            r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
         [ r stack spop set-contents! 
           pc advance ] ] ;
-
-TUPLE: instruction text quot ;
-: <instr> ( instr-text -- instr ) instruction new swap >>text ;
 
 :: update-insts! ( machine labels insts -- insts )
     insts [ dup text>> labels machine rot <exec> >>quot ] map ;
