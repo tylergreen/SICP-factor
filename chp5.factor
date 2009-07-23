@@ -24,9 +24,6 @@ C: <label> label
 ! ******************
 ! Primitive Instruction Syntax
 
-TUPLE: instruction text quot ;
-: <instr> ( instr-text -- instr ) instruction new swap >>text ;
-
 TUPLE: assign expr reg-name ;
 C: <assign> assign
                 
@@ -80,10 +77,10 @@ TUPLE: stack s push-count max-depth depth ;
 : <stack> ( -- stack ) nil 0 0 0 stack boa ;
 
 ! **********
-! Machine actions
+! Machine actions -- clearly not turing complete without random access memory store
 
 : spush ( elem stack -- )
-    [ s>> cons ] keep swap >>s
+    [ cons ] change-s
     [ 1+ ] change-push-count 
     [ 1+ ] change-depth
     dup [ max-depth>> ] [ depth>> ] bi max >>max-depth drop ;
@@ -96,12 +93,13 @@ TUPLE: stack s push-count max-depth depth ;
     ] if ; 
 
 : advance ( pc -- )
-    [ rest-slice ] change-conts ;
+    [ rest-slice ] change-conts drop ;
 
 ! *********
-! Assembler ( machine-language -> factor )
+! MachineLanguage->Factor Compiler
+! could have made these macros instead -- should try it
 
-GENERIC: <exec> ( labels machine instr -- quot )
+! what is this doing?
 GENERIC: <op-expr> ( labels machine instr -- quot )
 
 M: const <op-expr> ( labels machine instr -- quot )
@@ -117,6 +115,9 @@ M: op <op-expr> ( labels machine instr -- quot )
     [let | op [ dup prim>> ] 
            aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
         [ aprocs [ call ] each op call ] ] ;
+
+! What does this do?
+GENERIC: <exec> ( labels machine instr -- quot )
 
 M: assign <exec> ( labels machine instr -- quot )
     [let | pc [ over regs>> pc swap at ]
@@ -171,6 +172,12 @@ M: restore <exec> ( labels machine save -- quot )
         [ r stack spop set-contents! 
           pc advance ] ] ;
 
+! *********
+! Assembling and machine construction
+
+TUPLE: instruction text quot ;
+: <instr> ( instr-text -- instr ) instruction new swap >>text ;
+
 :: update-insts! ( machine labels insts -- insts )
     insts [ dup text>> labels machine rot <exec> >>quot ] map ;
 
@@ -198,10 +205,11 @@ M: restore <exec> ( labels machine save -- quot )
 :: set-reg ( machine reg-name value -- machine )
     reg-name machine regs>> at value set-contents! machine ;
 
-: get-reg ( machine reg-name -- value ) swap regs>> at ;
-  
+: get-reg ( machine reg-name -- value ) swap regs>> at conts>> ;
+
+! this is where you would hook up the macro -- see call
 : exec ( machine -- machine )
-    dup regs>> pc swap at conts>> dup empty?
+    dup pc get-reg dup empty?
     [ drop "done" . ]
     [ first quot>> call exec ] if ; inline
 
@@ -220,10 +228,10 @@ SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this 
       gcd-done [ ]
     } <machine> ;
 
-: gcddemo ( -- a )
+:: gcddemo ( a1 b1 -- c )
     gcd-machine
-    b 27 set-reg  
-    a 12 set-reg  
+    a a1 set-reg 
+    b b1 set-reg 
     exec
     a get-reg ; inline
     
@@ -246,9 +254,9 @@ SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
                   cont <reg> <goto> ]
       fact-done [ ] } <machine> ;
 
-: factdemo ( -- a )
+:: factdemo ( x -- a )
     fact-machine
-    n 5 set-reg
+    n x set-reg
     exec
     val get-reg ; inline
 
@@ -279,10 +287,10 @@ SYMBOLS: fib-loop afterfib-n-1 afterfib-n-2  immediate-answer fib-done ;
                          cont <reg> <goto> ]
       fib-done [ ] } <machine> ; 
 
-: fibdemo ( -- a )
+:: fibdemo ( x -- a )
     "fib(5):" .
-    fib-machine
-    n 5 set-reg
+    fib-machine 
+    n x set-reg
     exec
     val get-reg ; inline
 
@@ -318,8 +326,6 @@ SYMBOLS: tree count-done count-loop count-left count-right base-zero base-one ;
       base-one [ 1 <const> val <assign>
                   cont <reg> <goto> ]
       count-done [ ] } <machine> ;
-
-; inline
 
 ! ex. 5.21 (b)
 
