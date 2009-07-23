@@ -5,8 +5,8 @@ SYMBOLS: flag pc the-cars the-cdrs free ;
 
 CONSTANT: heap-size 500
 
-! *****
-! Data
+! *********************
+! Primitive Data Types
 
 TUPLE: op { args array } prim ;
 : <op> ( args quot -- op )
@@ -22,7 +22,7 @@ TUPLE: label lname ;
 C: <label> label
 
 ! ******************
-! Instruction Syntax
+! Primitive Instruction Syntax
 
 TUPLE: assign expr reg-name ;
 C: <assign> assign
@@ -45,8 +45,9 @@ C: <msave> msave
 TUPLE: restore reg-name ;
 C: <restore> restore
 
-! *************************
-! Memory Management "Macros"
+
+! ******************
+! Experimental and Non-Functioning/(unused) Memory Management "Macros"
 
 : pcar ( reg -- expr )
     { the-cars <reg> } append [ nth ] <op> ;
@@ -61,17 +62,9 @@ C: <restore> restore
 : set-cdr  ( reg reg -- expr )
     the-cdrs <reg> 3array [ set-nth ] <op> ;
 
-! need to revise this one -- its wrong!
-! swons like in order or args!
-:: pcons ( reg3 reg2 -- expr1 expr2 expr3 expr4 )
-    { reg2 <reg> free <reg> the-cars <reg> } [ set-nth ] <op> <perform>
-    { reg3 <reg> free <reg> the-cdrs <reg> } [ set-nth ] <op> <perform>
-    { free <reg> } reg1 <assign>
-    { free <reg> } [ 1+ ] <op> free <assign> ;
 
-
-! **********
-!  Machine
+! ****************
+!  Machine Specification
 
 TUPLE: machine regs stack instr-seq ;
 
@@ -80,27 +73,24 @@ TUPLE: register conts ;
 
 : set-contents! ( register x -- ) >>conts drop ;
 
-TUPLE: stack s push-count max-depth current-depth ;
+TUPLE: stack s push-count max-depth depth ;
 : <stack> ( -- stack ) nil 0 0 0 stack boa ;
 
 : spush ( elem stack -- )
     [ s>> cons ] keep swap >>s
-    dup push-count>> 1+ >>push-count
-    dup current-depth>> 1+ >>current-depth
-    dup [ max-depth>> ] [ current-depth>> ] bi max >>max-depth drop ;
+    [ 1+ ] change-push-count 
+    [ 1+ ] change-depth
+    dup [ max-depth>> ] [ depth>> ] bi max >>max-depth drop ;
  
-: spop1 ( stack -- elem )
-    [ s>> uncons ] keep swap >>s drop ;
-
 : spop ( stack -- elem )
     dup nil?
     [ "Empty Stack -- SPOP" throw ]
-    [ dup current-depth>> 1 - >>current-depth 
-      [ s>> uncons ] keep swap >>s drop
+    [ [ 1 - ] change-depth
+      [ uncons ] change-s drop
     ] if ; 
 
 : advance ( pc -- )
-    dup conts>> rest-slice >>conts drop ;
+    [ rest-slice ] change-conts ;
 
 GENERIC: <exec> ( labels machine intr -- quot )
 GENERIC: <op-expr> ( labels machine instr -- quot )
@@ -128,8 +118,7 @@ M: assign <exec> ( labels machine instr -- quot )
 M: perform <exec> ( labels machine perform -- quot )
     [let | pc [ over regs>> pc swap at ]
            action-proc [ expr>> <op-expr> ] |
-        [ action-proc call
-          pc advance ] ] ;
+        [ action-proc call pc advance ] ] ;
 
 M: mtest <exec> ( labels machine test -- quot )
     [let | pc [ over regs>> pc swap at ]
@@ -195,17 +184,23 @@ TUPLE: instruction text quot ;
     >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents!
     [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep
     [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep ;
+
+
+! ***********************
+! User-machine interface
+
+:: set-reg ( machine reg-name value -- machine )
+    reg-name machine regs>> at value set-contents! machine ;
+
+: get-reg ( machine reg-name -- value ) swap regs>> at ;
   
 : exec ( machine -- machine )
     dup regs>> pc swap at conts>> dup empty?
     [ drop "done" . ]
     [ first quot>> call exec ] if ; inline
 
-:: set-reg ( machine reg-name value -- machine )
-    reg-name machine regs>> at value set-contents! machine ;
-
-: get-reg ( machine reg-name -- value ) swap regs>> at ;
-
+! *********************
+! Pre-Defined machines
       
 SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this line into the machine spec if possible
 : gcd-machine ( -- machine )
@@ -219,7 +214,13 @@ SYMBOLS: a b temp test-b gcd-done ; ! would like to eventually incorporate this 
       gcd-done [ ]
     } <machine> ;
 
-                     
+: gcddemo ( -- a )
+    gcd-machine
+    b 27 set-reg  
+    a 12 set-reg  
+    exec
+    a get-reg ; inline
+    
 SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
 : fact-machine ( -- machine )
     { n val cont }
@@ -239,6 +240,11 @@ SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
                   cont <reg> <goto> ]
       fact-done [ ] } <machine> ;
 
+: factdemo ( -- a )
+    fact-machine
+    n 5 set-reg
+    exec
+    val get-reg ; inline
 
 SYMBOLS: fib-loop afterfib-n-1 afterfib-n-2  immediate-answer fib-done ;
 : fib-machine ( -- machine )
@@ -265,8 +271,14 @@ SYMBOLS: fib-loop afterfib-n-1 afterfib-n-2  immediate-answer fib-done ;
                      cont <reg> <goto> ]
       immediate-answer [ n <reg> val <assign>
                          cont <reg> <goto> ]
-      fib-done [ ] } <machine> ;
+      fib-done [ ] } <machine> ; 
 
+: fibdemo ( -- a )
+    "fib(5):" .
+    fib-machine
+    n 5 set-reg
+    exec
+    val get-reg ; inline
 
 ! ex. 5.21 (a)
 SYMBOLS: tree count-done count-loop count-left count-right base-zero base-one ;
@@ -301,6 +313,8 @@ SYMBOLS: tree count-done count-loop count-left count-right base-zero base-one ;
                   cont <reg> <goto> ]
       count-done [ ] } <machine> ;
 
+; inline
+
 ! ex. 5.21 (b)
 
 SYMBOLS: found-leaf ;
@@ -313,6 +327,11 @@ SYMBOLS: found-leaf ;
                    found-leaf <branch>
                    ! not done
     ] } <machine> ;
+
+
+
+
+
 
 
 
