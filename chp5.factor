@@ -92,6 +92,7 @@ TUPLE: stack s push-count max-depth depth ;
       [ uncons ] change-s drop
     ] if ; 
 
+! regular eager list- can we make it lazy?  if so what then?
 : advance ( pc -- )
     [ rest-slice ] change-conts drop ;
 
@@ -112,8 +113,8 @@ M: reg <op-expr> ( labels machine instr -- quot )
     [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
 
 M: op <op-expr> ( labels machine instr -- quot )
-    [let | op [ dup prim>> ] 
-           aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
+    [let dup prim>> :> op
+        [ '[ _ _ rot <op-expr> ] ] dip args>> swap map :> aprocs
         [ aprocs [ call ] each op call ] ] ;
 
 ! What does this do?
