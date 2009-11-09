@@ -46,23 +46,6 @@ TUPLE: restore reg-name ;
 C: <restore> restore
 
 
-! ******************
-! Experimental and Non-Functioning/(unused) Memory Management "Macros"
-
-: pcar ( reg -- expr )
-    { the-cars <reg> } append [ nth ] <op> ;
-
-: pcdr ( reg -- expr )
-    { the-cdrs <reg> } append [ nth ] <op> ;
-
-! make sure ordering is correct for these
-: set-car! ( reg reg -- expr )
-    the-cars <reg> 3array [ set-nth ] <op> ;
-
-: set-cdr  ( reg reg -- expr )
-    the-cdrs <reg> 3array [ set-nth ] <op> ;
-
-
 ! ****************
 !  Machine Specification
 
@@ -249,7 +232,7 @@ SYMBOLS: n val cont start fact-loop after-fact base-case fact-done ;
       base-case [ 1 <const> val <assign>
                   cont <reg> <goto> ]
       fact-done [ ] } <machine> ;
-
+  
 :: factdemo ( x -- a )
     fact-machine
     n x set-reg
@@ -322,6 +305,12 @@ SYMBOLS: tree count-done count-loop count-left count-right base-zero base-one ;
       base-one [ 1 <const> val <assign>
                   cont <reg> <goto> ]
       count-done [ ] } <machine> ;
+
+:: count-leaves-demo ( cons-tree -- n )
+    leaf-counter
+    tree cons-tree set-reg
+    exec
+    val get-reg ;
 
 ! ex. 5.21 (b)
 
