@@ -1,7 +1,7 @@
 USING: accessors grouping namespaces prettyprint math math.order kernel hashtables sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
 IN: sicp.chp5
 
-SYMBOLS: flag pc the-cars the-cdrs free ;
+SYMBOLS: flag pc ;
 
 CONSTANT: heap-size 500
 
@@ -193,14 +193,6 @@ TUPLE: instruction text quot ;
     ] dip assemble >>instr-seq
 dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ; inline
 
-: <machine2> ( reg-names ctext -- machine )
-    [ { pc flag the-cars the-cdrs free } append [ <register> 2array ] map
-      <stack> f machine boa dup
-    ] dip assemble
-    >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents!
-    [ regs>> heap-size f <array> swap the-cars swap set-at ] keep
-    [ regs>> heap-size f <array> swap the-cars swap set-at ] keep ;
-
 
 ! ***********************
 ! User-machine interface
@@ -215,10 +207,6 @@ dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ; inline
     dup pc get-reg dup empty?
     [ drop "done" . ]
     [ first quot>> call( -- ) exec ] if ; inline recursive
-
-! : exec ( machine -- machine )
-!    [ dup pc get-reg dup empty? ]
-!    [ first quot>> call exec ] if ; inline
 
 
 ! *********************
@@ -347,13 +335,3 @@ SYMBOLS: found-leaf ;
                    found-leaf <branch>
                    ! not done
     ] } <machine> ;
-
-
-
-
-
-
-
-
-
-
