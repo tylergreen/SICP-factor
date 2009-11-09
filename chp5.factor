@@ -113,9 +113,9 @@ M: reg <op-expr> ( labels machine instr -- quot )
     [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
 
 M: op <op-expr> ( labels machine instr -- quot )
-    [let dup prim>> :> op
-        [ '[ _ _ rot <op-expr> ] ] dip args>> swap map :> aprocs
-        [ aprocs [ call ] each op call ] ] ;
+    [let* | op [ dup prim>> ]
+           aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
+            [ aprocs [ call ] each op call ] ] ;
 
 ! What does this do?
 GENERIC: <exec> ( labels machine instr -- quot )
