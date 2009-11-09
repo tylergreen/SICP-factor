@@ -1,4 +1,4 @@
-USING: accessors namespaces prettyprint math math.order utils kernel hashtables restruct sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
+USING: accessors grouping namespaces prettyprint math math.order kernel hashtables sequences arrays lists lists.lazy assocs strings quotations continuations locals fry ;
 IN: sicp.chp5
 
 SYMBOLS: flag pc the-cars the-cdrs free ;
@@ -81,8 +81,8 @@ TUPLE: stack s push-count max-depth depth ;
 
 : spush ( elem stack -- )
     [ cons ] change-s
-    [ 1+ ] change-push-count 
-    [ 1+ ] change-depth
+    [ 1 + ] change-push-count 
+    [ 1 + ] change-depth
     dup [ max-depth>> ] [ depth>> ] bi max >>max-depth drop ;
  
 : spop ( stack -- elem )
@@ -94,7 +94,7 @@ TUPLE: stack s push-count max-depth depth ;
 
 ! regular eager list- can we make it lazy?  if so what then?
 : advance ( pc -- )
-    [ rest-slice ] change-conts drop ;
+    [ rest-slice ] change-conts drop ; inline
 
 ! *********
 ! MachineLanguage->Factor Compiler
@@ -104,100 +104,102 @@ TUPLE: stack s push-count max-depth depth ;
 GENERIC: <op-expr> ( labels machine instr -- quot )
 
 M: const <op-expr> ( labels machine instr -- quot )
-    val>> 1q 2nip ;
+    val>> '[ _ ] 2nip ;
 
 M: label <op-expr> ( labels machine instr -- quot )
-    nip lname>> swap at 1q ;
+    nip lname>> swap at '[ _ ] ;
 
 M: reg <op-expr> ( labels machine instr -- quot )
     [ regs>> ] [ reg-name>> ] bi* swap at '[ _ conts>> ] nip ;
 
 M: op <op-expr> ( labels machine instr -- quot )
-    [let* | op [ dup prim>> ]
-           aprocs [ [ '[ _ _ rot <op-expr> ] ] dip args>> swap map ] |
-            [ aprocs [ call ] each op call ] ] ;
+    [let dup prim>> :> op
+        [ '[ _ _ rot <op-expr> ] ] dip args>> swap map :> aprocs
+        [ aprocs [ call ] each op call ] ] ;
 
 ! What does this do?
 GENERIC: <exec> ( labels machine instr -- quot )
 
 M: assign <exec> ( labels machine instr -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           target [ 2dup [ regs>> ] [ reg-name>> ] bi* swap at ]
-           value-proc [ expr>> <op-expr> ] |
-        [ target value-proc call set-contents! pc advance ] ] ;
+    [let
+        over regs>> pc swap at :> pc
+        2dup [ regs>> ] [ reg-name>> ] bi* swap at :> target
+        expr>> <op-expr> :> value-proc
+        [ target value-proc call set-contents! pc advance ] ] ; inline
 
 M: perform <exec> ( labels machine perform -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           action-proc [ expr>> <op-expr> ] |
-        [ action-proc call pc advance ] ] ;
+    [let over regs>> pc swap at :> pc
+        expr>> <op-expr>  :> action-proc
+        [ action-proc call pc advance ] ] ; inline
 
 M: mtest <exec> ( labels machine test -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           flag [ over regs>> flag swap at ]
-           condition-proc [ pred>> <op-expr> ] |
-        [ flag condition-proc call set-contents! pc advance ] ] ;
+    [let over regs>> pc swap at :> pc 
+         over regs>> flag swap at :> flag
+         pred>> <op-expr> :> condition-proc
+        [ flag condition-proc call set-contents! pc advance ] ] ; inline
 
 M: branch <exec> ( labels machine branch -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           flag [ over regs>> flag swap at ]
-           insts [ nip label>> swap at ] |
+    [let
+        over regs>> pc swap at :> pc
+        over regs>> flag swap at :> flag
+        nip label>> swap at :> insts
         [ flag conts>>
           [ pc insts set-contents! ]
-          [ pc advance ] if ] ] ;
+          [ pc advance ] if ] ] ; inline
 
 GENERIC: <goto-exec> ( labels machine data -- quot )      
       
 M: label <goto-exec> ( labels machine label -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           insts [ nip lname>> swap at ] |
-        [ pc insts set-contents! ] ] ;
+    [let over regs>> pc swap at :> pc
+         nip lname>> swap at :> insts
+        [ pc insts set-contents! ] ] ; inline
 
 M: reg <goto-exec> ( labels machine register -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
-        [ pc r conts>> set-contents! ] ] ;
+    [let over regs>> pc swap at :> pc
+        [ regs>> ] [ reg-name>> ] bi* swap at nip :> r
+        [ pc r conts>> set-contents! ] ] ; inline
 
-M: goto <exec> ( labels machine goto -- quot ) location>> <goto-exec> ;
+M: goto <exec> ( labels machine goto -- quot ) location>> <goto-exec> ; inline
 
 M: msave <exec> ( labels machine save -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           stack [ over stack>> ]
-           r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
+    [let over regs>> pc swap at :> pc
+        over stack>>  :> stack
+        [ regs>> ] [ reg-name>> ] bi* swap at nip :> r
         [ r conts>> stack spush
-          pc advance ] ] ;
+          pc advance ] ] ; inline
 
 M: restore <exec> ( labels machine save -- quot )
-    [let | pc [ over regs>> pc swap at ]
-           stack [ over stack>> ]
-           r [ [ regs>> ] [ reg-name>> ] bi* swap at nip ] |
+    [let over regs>> pc swap at  :> pc 
+        over stack>> :> stack
+        [ regs>> ] [ reg-name>> ] bi* swap at nip :> r
         [ r stack spop set-contents! 
-          pc advance ] ] ;
+          pc advance ] ] ; inline
 
 ! *********
 ! Assembling and machine construction
-
 TUPLE: instruction text quot ;
-: <instr> ( instr-text -- instr ) instruction new swap >>text ;
+: <instr> ( instr-text -- instr ) instruction new swap >>text ; inline
 
 :: update-insts! ( machine labels insts -- insts )
-    insts [ dup text>> labels machine rot <exec> >>quot ] map ;
+    insts [ dup text>> labels machine rot <exec> >>quot ] map ; inline
 
 : assemble ( machine controller-text -- insts )
-    2 nsplit [ { } swap with-datastack [ <instr> ] map
-    ] assoc-map dup values concat update-insts! ;
+    2 group [ { } swap with-datastack [ <instr> ] map
+    ] assoc-map dup values concat update-insts! ; inline
 
 : <machine> ( reg-names ctext -- machine )
     [ { pc flag } append [ <register> 2array ] map
       <stack> f machine boa dup
-    ] dip assemble >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ;
+    ] dip assemble >>instr-seq
+dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents! ; inline
 
 : <machine2> ( reg-names ctext -- machine )
     [ { pc flag the-cars the-cdrs free } append [ <register> 2array ] map
       <stack> f machine boa dup
     ] dip assemble
     >>instr-seq dup [ regs>> pc swap at ] [ instr-seq>> ] bi set-contents!
-    [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep
-    [ regs>> heap-size f <array> swap the-cars swap  set-at ] keep ;
+    [ regs>> heap-size f <array> swap the-cars swap set-at ] keep
+    [ regs>> heap-size f <array> swap the-cars swap set-at ] keep ;
 
 
 ! ***********************
@@ -212,7 +214,12 @@ TUPLE: instruction text quot ;
 : exec ( machine -- machine )
     dup pc get-reg dup empty?
     [ drop "done" . ]
-    [ first quot>> call exec ] if ; inline
+    [ first quot>> call( -- ) exec ] if ; inline recursive
+
+! : exec ( machine -- machine )
+!    [ dup pc get-reg dup empty? ]
+!    [ first quot>> call exec ] if ; inline
+
 
 ! *********************
 ! Pre-Defined machines
